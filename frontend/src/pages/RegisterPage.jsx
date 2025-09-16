@@ -17,13 +17,14 @@ const RegisterPage = () => {
     confirmPassword: '',
   });
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     // Basic client-side validation
@@ -39,9 +40,43 @@ const RegisterPage = () => {
       setError('Die Passwörter stimmen nicht überein.');
       return;
     }
-    // TODO: replace with API call to create account
-    console.log('Register with', form);
-    navigate('/');
+    try {
+      setIsSubmitting(true);
+      const response = await fetch('/api/users/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          password: form.password,
+        }),
+      });
+
+      let payload = {};
+      try {
+        payload = await response.json();
+      } catch (error) {
+        // Ignore JSON parsing errors and use default message below
+      }
+
+      if (!response.ok) {
+        const message =
+          payload?.errors?.[0]?.message ||
+          payload?.message ||
+          'Die Registrierung ist fehlgeschlagen.';
+        throw new Error(message);
+      }
+
+      navigate('/login', { replace: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Die Registrierung ist fehlgeschlagen.';
+      setError(message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -95,9 +130,10 @@ const RegisterPage = () => {
         {error && <p className="text-red-600 text-sm">{error}</p>}
         <button
           type="submit"
-          className="bg-primary-700 text-white px-4 py-2 rounded hover:bg-primary-800 w-full"
+          className="bg-primary-700 text-white px-4 py-2 rounded hover:bg-primary-800 disabled:opacity-75 disabled:cursor-not-allowed w-full"
+          disabled={isSubmitting}
         >
-          Konto erstellen
+          {isSubmitting ? 'Wird erstellt…' : 'Konto erstellen'}
         </button>
       </form>
       <p className="mt-4 text-sm">Bereits registriert? <Link to="/login" className="text-primary-700 hover:underline">Anmelden</Link></p>

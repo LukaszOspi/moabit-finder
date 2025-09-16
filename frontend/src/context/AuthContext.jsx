@@ -13,7 +13,7 @@ export const AuthProvider = ({ children }) => {
   }, [])
 
   const login = async (email, password) => {
-    const res = await fetch('http://localhost:3000/api/users/login', {
+    const res = await fetch('/api/users/login', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -32,7 +32,7 @@ export const AuthProvider = ({ children }) => {
   }
 
   const logout = async () => {
-    await fetch('http://localhost:3000/api/users/logout', {
+    await fetch('/api/users/logout', {
       method: 'POST',
       credentials: 'include',
     })
@@ -44,3 +44,4 @@ export const AuthProvider = ({ children }) => {
 }
 
 export const useAuth = () => useContext(AuthContext)
+

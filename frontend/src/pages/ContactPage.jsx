@@ -8,23 +8,52 @@ import React, { useState } from 'react';
  */
 const ContactPage = () => {
   const [form, setForm] = useState({ name: '', email: '', subject: '', message: '' });
-  const [submitted, setSubmitted] = useState(false);
+  const [feedback, setFeedback] = useState({ type: 'idle', message: '' });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setFeedback({ type: 'idle', message: '' });
     // Basic validation: ensure fields are filled in
     if (!form.name || !form.email || !form.message) {
-      alert('Bitte füllen Sie alle Pflichtfelder aus.');
+      setFeedback({ type: 'error', message: 'Bitte füllen Sie alle Pflichtfelder aus.' });
       return;
     }
-    // TODO: replace with API call or form submission logic
-    setSubmitted(true);
-    setForm({ name: '', email: '', subject: '', message: '' });
+    try {
+      setIsSubmitting(true);
+      const response = await fetch('/api/contact', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(form),
+      });
+
+      let payload = {};
+      try {
+        payload = await response.json();
+      } catch (error) {
+        // ignore JSON parse errors and fallback to generic message
+      }
+
+      if (!response.ok || payload.success !== true) {
+        const message = payload?.error || 'Ihre Nachricht konnte nicht gesendet werden.';
+        throw new Error(message);
+      }
+
+      setFeedback({ type: 'success', message: 'Vielen Dank! Ihre Nachricht wurde gesendet.' });
+      setForm({ name: '', email: '', subject: '', message: '' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unbekannter Fehler beim Senden der Nachricht.';
+      setFeedback({ type: 'error', message });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -92,12 +121,16 @@ const ContactPage = () => {
           </div>
           <button
             type="submit"
-            className="bg-primary-700 text-white px-4 py-2 rounded hover:bg-primary-800"
+            className="bg-primary-700 text-white px-4 py-2 rounded hover:bg-primary-800 disabled:opacity-75 disabled:cursor-not-allowed"
+            disabled={isSubmitting}
           >
-            Nachricht senden
+            {isSubmitting ? 'Wird gesendet…' : 'Nachricht senden'}
           </button>
-          {submitted && (
-            <p className="mt-2 text-green-700">Vielen Dank! Ihre Nachricht wurde gesendet.</p>
+          {feedback.type === 'success' && (
+            <p className="mt-2 text-green-700">{feedback.message}</p>
+          )}
+          {feedback.type === 'error' && (
+            <p className="mt-2 text-red-600">{feedback.message}</p>
           )}
         </form>
       </div>

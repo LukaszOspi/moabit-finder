@@ -1,5 +1,7 @@
 import type { CollectionConfig, PayloadRequest } from 'payload'
 
+import { resolveRecipientsFromEnv, sendEmail } from '../lib/email'
+
 const Events: CollectionConfig = {
   slug: 'events',
   admin: {
@@ -241,11 +243,120 @@ const Events: CollectionConfig = {
       },
     ],
     afterChange: [
-      async ({ doc, operation, req }: { doc: any; operation: string; req: PayloadRequest }) => {
-        // Send email notification when status changes to approved
-        if (operation === 'update' && doc.status === 'approved') {
-          // TODO: Implement email notification
-          console.log('Event approved, send notification email')
+      async ({
+        doc,
+        operation,
+        previousDoc,
+        req,
+      }: {
+        doc: any
+        operation: string
+        previousDoc?: any
+        req: PayloadRequest
+      }) => {
+        const transitionedToApproved =
+          operation === 'update' &&
+          doc?.status === 'approved' &&
+          previousDoc?.status !== 'approved'
+
+        if (!transitionedToApproved) {
+          return
+        }
+
+        const recipients = resolveRecipientsFromEnv(
+          process.env.EVENT_APPROVAL_NOTIFICATION_EMAILS ||
+            process.env.CONTACT_RECIPIENT_EMAILS ||
+            process.env.SMTP_USER,
+        )
+
+        if (!recipients.length) {
+          req.payload?.logger?.warn?.(
+            'EVENT_APPROVAL_NOTIFICATION_EMAILS is not configured. Skipping approval email.',
+          )
+          return
+        }
+
+        const startDate = doc?.startDate ? new Date(doc.startDate) : null
+        const endDate = doc?.endDate ? new Date(doc.endDate) : null
+        const dateFormatter = new Intl.DateTimeFormat('de-DE', {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        })
+
+        const formattedStart = startDate ? dateFormatter.format(startDate) : 'unbekannt'
+        const formattedEnd = endDate ? dateFormatter.format(endDate) : undefined
+
+        const organizerName =
+          typeof doc?.organizer === 'object' && doc.organizer
+            ? doc.organizer.name || doc.organizer.title || doc.organizer.id
+            : doc?.organizer
+
+        const locationName =
+          typeof doc?.location === 'object' && doc.location
+            ? doc.location.name || doc.location.title || doc.location.id
+            : doc?.location
+
+        const plainLines = [
+          `Titel: ${doc?.title ?? 'Unbekannt'}`,
+          `Status: ${doc?.status}`,
+          `Start: ${formattedStart}`,
+        ]
+
+        if (formattedEnd) {
+          plainLines.push(`Ende: ${formattedEnd}`)
+        }
+
+        if (organizerName) {
+          plainLines.push(`Veranstalter: ${organizerName}`)
+        }
+
+        if (locationName) {
+          plainLines.push(`Ort: ${locationName}`)
+        }
+
+        const htmlLines = [`<p>Die Veranstaltung <strong>${doc?.title ?? 'Unbekannt'}</strong> wurde soeben freigegeben.</p>`, '<ul>']
+        htmlLines.push(`<li><strong>Status:</strong> ${doc?.status}</li>`)
+        htmlLines.push(`<li><strong>Start:</strong> ${formattedStart}</li>`)
+
+        if (formattedEnd) {
+          htmlLines.push(`<li><strong>Ende:</strong> ${formattedEnd}</li>`)
+        }
+
+        if (organizerName) {
+          htmlLines.push(`<li><strong>Veranstalter:</strong> ${organizerName}</li>`)
+        }
+
+        if (locationName) {
+          htmlLines.push(`<li><strong>Ort:</strong> ${locationName}</li>`)
+        }
+
+        htmlLines.push('</ul>')
+
+        const adminUrl = process.env.PAYLOAD_PUBLIC_SERVER_URL
+          ? `${process.env.PAYLOAD_PUBLIC_SERVER_URL}/admin/collections/events/${doc?.id}`
+          : undefined
+
+        if (adminUrl) {
+          plainLines.push(`Link zur Veranstaltung im Admin: ${adminUrl}`)
+        }
+
+        const textBody = plainLines.join('\n')
+
+        if (adminUrl) {
+          htmlLines.push(`<p><a href="${adminUrl}">Zur Veranstaltung im Admin-Bereich</a></p>`)
+        }
+
+        const result = await sendEmail({
+          to: recipients,
+          subject: `Veranstaltung freigegeben: ${doc?.title ?? 'Ohne Titel'}`,
+          text: textBody,
+          html: htmlLines.join('\n'),
+        })
+
+        if (!result.success) {
+          req.payload?.logger?.error?.(
+            `E-Mail-Benachrichtigung für Veranstaltung ${doc?.id} fehlgeschlagen: ${result.error}`,
+          )
         }
       },
     ],
